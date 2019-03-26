@@ -1,0 +1,827 @@
+---
+title: "Survival Analysis: Cox Proportional-Hazards Model"
+date: "`r Sys.Date()`"
+author: Samuel Moijueh
+header-includes:
+   - \usepackage{caption}
+output: 
+  # output: html_notebook
+  html_document:
+    includes:
+      in_header: "favicon.html" 
+    toc: true
+    theme: cosmo
+    highlight: tango
+---
+
+<!-- <style type="text/css"> -->
+<!-- .main-container { -->
+<!--   max-width: 1000px; -->
+<!--   margin-left: auto; -->
+<!--   margin-right: auto; -->
+<!-- } -->
+<!-- </style> -->
+
+<div id="container" float:right; style="position: relative; width:10px;height:10px;">
+<div style= "float:right;position: absolute; top: -160px; left:600px; padding-left: 10px;width: 350px">
+```{r, echo=F, fig.align = 'default'}
+knitr::include_graphics("2.jpg")
+```
+</div>
+<div style= "float:right;position: absolute; top: -170px; left:350px; padding-left: 10px; width: 150px">
+```{r, echo=F, fig.align = 'default'}
+knitr::include_graphics("prescription.jpg")
+```
+</div>
+</div>
+
+******
+# Introduction {.tabset .tabset-fade}
+******
+
+<div>
+<p><span class="warning">The Notebook is divided into tabbed sections as seen below.</span></p>
+</div>
+
+## Purpose
+
+Survival analysis is used to study the **time** until some **event** of interest (often referred to as death) occurs. 
+
+In this post we will perform a survival analysis on the Primary Biliary Cirrhosis (PBC) Dataset. PBC is a well-known dataset that can be found in <a href="https://onlinelibrary.wiley.com/doi/pdf/10.1002/9781118150672.app4" target="_blank">Appendix D</a> of <a href="https://www.amazon.com/Counting-Processes-Survival-Analysis-Fleming/dp/0471769886" target="_blank">Fleming and Harrington's book (1991)</a> on survival analysis. The dataset is also available to download at NCSU Stats Data <a href="https://www4.stat.ncsu.edu/~boos/var.select/pbc.html" target="_blank">Repository</a>.
+
+**PBC** is an autoimmune disease that causes progressive destruction of the bile ducts. If left untreated, the disease can be fatal.
+
+The data itself is from a **Mayo Clinic** clinical study of a total of 424 PBC patients. The patients were observed over a period of 10 years (1974-1984).
+
+The first cohort of PBC patients were treated with D-penicillamine. The second cohort were treated with a placebo. 
+
+In this post, we will answer the following research questions:
+
+1. Are there differences in survival between the two groups of patients? If so, is the difference statistically significant?
+2. What clinical characteristics impact a patient's survival time?  Click on the adjacent tab for the list of covariates.
+3. Can we make any conclusions regarding the efficacy of D-penicillamine (the experimental drug) on the sample population? Is the effect of the drug on survival time statistically significant? Is the drug one step closer to being ready for market?
+
+<div>
+<p><span class="success">Answers to these research questions will appear in green checkboxes</span></p>
+</div>
+
+## The Primary Biliary Cirrhosis (PBC) Dataset 
+
+The PBC dataset has 15 covariates (listed below). There is one primary response variable: `futime`. This is the number of days between drug treatment and death. Subjects are considered **censored** if (1) they did not die during the period of observation, (2) they received a liver transplant, (3) the subject exited the study or (4) somehow the patient was lost to follow-up. 
+
+The patient's `status` reveals if they are censored or not. Missing  data  items are  denoted  by ".". 
+
+| Variable | Description                                                                                                                                                              |
+|----------|--------------------------------------|
+| id       | case number                          |
+| futime   | number of days between treatment and death |
+| status   | 0=alive, 1=liver transplant, 2=death |
+| drug     | 1= D-penicillamine, 2=placebo        |
+| age      | age in days                          |
+| sex      | 0=male, 1=female                     |
+| ascites  | presence of ascites: 0=no 1=yes      |
+| hepato   | presence of hepatomegaly 0=no 1=yes  |
+| spiders  | presence of spiders 0=no 1=yes       |
+| edema    | presence of edema 0=no edema and no diuretic therapy for edema; .5 = edema present without diuretics, or edema resolved by diuretics; 1 = edema despite diuretic therapy  |
+| bili     | serum bilirubin in mg/dl             |
+| chol     | serum cholesterol in mg/dl           |
+| albumin  | albumin in gm/dl                     |
+| copper   | urine copper in ug/day               |
+| alk_phos | alkaline phosphatase in U/liter      |
+| sgot     | SGOT in U/ml                         |
+| trig     | triglicerides in mg/dl platelet = platelets per cubic ml/1000 |
+| protime  | prothrombin time in seconds          |
+| stage    | histologic stage of disease |
+
+## What is Survival Analysis?
+
+Survival Analysis is a statisical approach used to investigate the **time** it takes for an **event** of interest to occur and its relationship with covariates.
+
+Survival analysis is traditionally used to measure the lifetime of populations. However, the event could be anything of interest.
+
+**Survival analysis** is used in a variety of fields such as:
+
+- Actuarial Science and Insurance Industry
+    + They analyze life tables, look at probabilities, and assess risk to estimate **durations** such as how long before a person has an accident, how long before a person gets sick, how long before a person dies, etc. Actuaries use this information to help businesses calculate costs, determine premiums for policyholders, develop policies that minimize the cost of risk and uncertainty, etc.
+  
+- Medical and Pharmaceutical Industry
+    + What is the expected lifetime of patients given treatment A vs patients given treatment B? Is a drug's efficiacy in the population statistically significant? What is the impact of certain clinical characteristics on a patient’s survival? What is the probability that an individual survives 3 years? Are there differences in survival between groups of patients?
+ 
+- Engineering
+    + Used in reliability theory. How long before failure in a mechnical system and/or device? 
+
+- Tech and Digital Marketing Industry
+    + What is the time between signup and first order/use? When will a customer churn? When will a store run out of product? How long before a person replaces his/her phone?
+
+The duration of time leading up to the event of interest is called the **survival time**.
+
+******
+# Set up Environment
+******
+
+<div id="container" float:right; style="position: relative; width:10px;height:10px;">
+<div style= "float:right;position: absolute; top: -80px; left:400px; padding-left: 10px; width: 500px">
+```{r, echo=F, fig.align = 'default'}
+knitr::include_graphics("mayo3.png")
+```
+</div>
+</div>
+
+Load packages and import data.
+
+<div class = "dark">
+```{r,  echo=TRUE, message=FALSE}
+# load required packages
+library(pacman)
+pacman::p_load(survival, survminer, dplyr, ggplot2, gridExtra, DT, corrplot, broom)
+
+# import PBC dataset, encode missing values as 'NA'
+d <- read.table(file = "https://www4.stat.ncsu.edu/~boos/var.select/pbc.dat.txt", 
+                       na.strings = c('.', 'NA'))
+
+# set column names
+colnames(d) <- c('id','futime','status','drug','age','sex','ascites',
+                        'hepato','spiders','edema','bili','chol','albumin',
+                        'copper','alk_phos','sgot','trig','platelet', 
+                        'protime','stage')
+
+# convert the time in days to years for simplicity
+d$age = floor(d$age / 365)
+
+# remove all rows with missing values from the dataframe
+d <- d[complete.cases(d), ]
+```
+</div>
+
+<br>
+
+There are 276 complete cases in the dataset and 15 covariates. 
+
+<div class="dark">
+```{r, warning=FALSE, echo=TRUE}
+# look at the data
+datatable(d, options = list(pageLength = 5))
+```
+</div>
+
+The primary response variable is `futime`. This is the number of days between the patient receiving drug treatment and occurrence of death, receiving a liver transplant, or the end of the 10 year study observation period. 
+
+Patients who alive are denoted by `status=0`. Patients who became *censored* due to receiving a liver transplant are denoted by `status=1`. Patients who died to PBC disease are denoted by `status=2`. 
+
+The `Survival` library requires that the event of interest have a `status=1` and the censored events to have a `status=0`. Alive and liver transplant are both censored events. We will make this conversion now. 
+
+<div class="dark">
+```{r, warning = FALSE, echo=TRUE}
+# recode status
+d$status = ifelse(d$status == 2, 1, 0)
+table(d$status)/length(d$status)
+```
+</div>
+
+
+A percent calculation of the status shows that approximately 40% of patients died during the observation period.
+
+
+******
+# Visually Explore the Data {.tabset .tabset-fade}
+******
+
+<div>
+<p><span class="warning">Click on the tabs for different aspects of the Exploratory Data Analysis.</span></p>
+</div>
+
+## Histogram of Age Variable
+
+The ages of PCB patients are normally distributed. The median age is approximately 49 years. Patients range from ages 26 to 78. Click on the next tab for the correlation matrix.
+
+<div class="dark">
+```{r, echo=TRUE, out.width="100%"}
+# Create a histogram
+ggplot(d, aes(x=age)) +
+    geom_histogram(binwidth=2, colour="black", fill="pink") + ggtitle("Distribution of Age") + xlab("Age (years)") +  ylab("Frequency") +   ggtitle("Histogram of Age") + 
+  theme(plot.title = element_text(hjust = 0.5)) + scale_x_continuous(breaks = seq(0, 80, by = 3))
+summary(d$age)
+```
+</div>
+
+## Correlation Matrix
+
+We can look at the association between the covariates. The matrix below was calculated using the pearson correlation coefficient which measures the linear dependence between two variables. The matrix below also has information regarding the signficance level ($\alpha = 0.01$) of the perarson correlation coefficent. 
+
+<h3> Insights </h3>
+
+1. `ascites` and `edema` have a PCC of 0.63476307. It makes sense that these variables are positively correlated: they are both symptoms of liver disease.
+
+2. `bili` and `futime` have a PCC of -0.43025241. It makes sense that these variables are negatively correlated: elevated levels of bilirubin are a sign of liver damage or disease -- it indicates that the liver isn't clearing bilirubin properly.
+
+3. `stage` and `hepato` have a PCC of 0.47913224. It makes sense that these variables are positively correlated. Hepatomegaly is an abnormal enlargement of the liver. An enlarged liver is indicates that the disease has progress to an advanced histologic stage.
+
+The rest of the variables are not as strongly correlated. A stepwise regression of each covariate will help us better explain the data.
+
+
+<div class="dark">
+```{r, echo=TRUE, out.width="100%"}
+cor.mtest <- function(mat) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j])
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+
+# matrix of correlation statistic
+corr<-cor(d)
+
+# matrix of the p-value of the correlation
+p.mat <- cor.mtest(d)
+
+#corrplot(corr, method = "circle")
+
+# Specialized the insignificant value according to the significant level
+corrplot(corr, type="upper", order="hclust", 
+         p.mat = p.mat, sig.level = 0.01)  # 0.01 is more stringent than 0.05. 
+# small p-value reject null hypothesis. 
+```
+</div>
+
+## Density Distribution of Quantitative Varibles
+
+Lastly, we can look at the distribution of the quantitative variables. The code used to generate these plots are available on the <a href="https://github.com/smoijueh/" target="_blank">Github repository</a>.
+
+```{r, echo=FALSE}
+xlabels <- list("bili" = "Serum Bilirubin (mg/dl)", 
+                "chol" = "Serum Cholesterol in (mg/dl)", 
+                "albumin" = "Albumin (gm/dl)", 
+                "copper" = "Urine Copper (ug/day))", 
+                "alk_phos" = "Alkaline Phosphatase (U/liter))", 
+                "sgot" = "SGOT (U/ml))", 
+                "trig" = "triglicerides in mg/dl platelet = platelets per cubic ml/1000", 
+                "protime" = "prothrombin time in seconds")
+
+density_plot<-function(x, log = FALSE){
+  if(log){
+    return(ggplot(d, aes(x=log(d[[x]]))) + geom_density() + xlab(paste0("log(d$",x,")")) +  ylab("Density") + ggtitle(paste0("log(d$", x,")")) + theme(plot.title = element_text(hjust = 0.5)))
+  }
+  return(ggplot(d, aes(x=d[[x]])) + geom_density() + xlab(xlabels[[x]]) +  ylab("Density") + ggtitle(paste0("Density Plot of d$", x)) + theme(plot.title = element_text(hjust = 0.5)))
+}
+
+l <- ls(xlabels)
+```
+
+<div class="dark">
+```{r,echo=TRUE, out.width="100%"}
+# Arrange and display the plots into a 2x4 grid. xlab(paste0("log( d$", x,")"))
+grid.arrange(density_plot(l[1]),
+             density_plot(l[2]),
+             density_plot(l[3]),
+             density_plot(l[4]), ncol=2)
+```
+</div>
+
+Other than `Albumin`, the rest of the variables have density distributions that skew to the left. The case is the same for the remaining four variables. 
+
+<div class="dark">
+```{r, out.width="100%"}
+# Arrange and display the plots into a 2x4 grid
+grid.arrange(density_plot(l[5]),
+             density_plot(l[6]),
+             density_plot(l[7]),
+             density_plot(l[8]), ncol=2)
+```
+</div>
+
+We can apply a log transformation to make the data more normally distributed. 
+
+<div class="dark">
+```{r, echo=TRUE, out.width="100%"}
+# apply log transformation on left skewed data
+# Arrange and display the plots into a 2x1 grid
+grid.arrange(density_plot(l[2], 1),
+             density_plot(l[3], 1),
+             density_plot(l[4], 1),
+             density_plot(l[5], 1),
+             density_plot(l[6], 1),
+             density_plot(l[7], 1),
+             density_plot(l[8], 1), ncol=4)
+```
+</div>
+
+******
+# Transform the Data
+******
+
+We saw from the previous section that we have to apply a log transformation to the certain covariates. These variables will be used later when we create a Cox Proportional-Hazards Regression Model.
+
+<div class="dark">
+```{r, echo=TRUE, warning=FALSE}
+# apply log transformation -- 7 variables
+d$alk_phos <- log(d$alk_phos)
+d$bili <- log(d$bili)
+d$chol <- log(d$chol)
+d$copper <- log(d$copper)
+d$protime <- log(d$protime)
+d$sgot <- log(d$sgot)
+d$trig <- log(d$trig)
+
+# change data labels -- 7 variables
+d$drug <- factor(d$drug, 
+                     levels = c("1", "2"), 
+                     labels = c("D-penicillamine", "placebo"))
+
+d$sex <- factor(d$sex, 
+                     levels = c("0", "1"), 
+                     labels = c("male", "female"))
+
+d$ascites <- factor(d$ascites, 
+                    levels = c("0", "1"), 
+                    labels = c("no", "yes"))
+
+d$hepato <- factor(d$hepato, 
+                    levels = c("0", "1"), 
+                    labels = c("no", "yes"))
+
+d$spiders <- factor(d$spider, 
+                    levels = c("0", "1"), 
+                    labels = c("no", "yes"))
+
+d$edema <- factor(d$edema, 
+                    levels = c("0", "0.5", "1"), 
+                    labels = c("no edema and no diuretic therapy for edema", 
+                               "edema present without diuretics, or edema resolved by diuretics",
+                               "edema despite diuretic therapy"))
+
+d$stage <- factor(d$stage,
+                      levels = c("1", "2", "3", "4"),
+                      labels = c("one", "two", "three", "four"))
+```
+</div>
+
+******
+# Survival Analysis {.tabset .tabset-fade}
+******
+
+In this section we will investigate whether there is a difference in survival between the two groups of patients. We will do this by generating survival curves for each group and performing a log-rank comaparison. This will enable us to make a conclusion regarding the efficacy of D-pencillamine (the experimental drug) on the sample population.
+
+<div>
+<p><span class="warning">Click on the tabs for different aspects of the Survival Analysis.</span></p>
+</div>
+
+## Null and Alternative Hypothesis
+
+<div style= "float:right;position: relative; padding-left: 10px;">
+```{r, echo=F, fig.align = 'default', out.width="95%"}
+knitr::include_graphics("comic.jpg")
+```
+</div>
+
+<!-- <div id="container" float:right; style="position: relative; width:10px;height:10px;"> -->
+<!-- <div style= "float:right;position: absolute; top: -170px; left:350px; padding-left: 10px; width: 1050px"> -->
+<!-- ```{r, echo=F, fig.align = 'default', fig.cap ="Figure 5. Labels for Supervised Learning: The Pixel Values of the Image, Age, Gender"} -->
+<!-- knitr::include_graphics("comic.jpg") -->
+<!-- ``` -->
+<!-- </div> -->
+<!-- </div> -->
+
+<h3> Null and Alternative Hypothesis </h3>
+
+$H_o : S_1(t) = S_2(t), \forall t$
+
+$H_a : \exists t : S_1(t) \neq S_2(t)$
+
+The hypotheses above are as follows
+
+$H_o:$ There is no significant difference in survival between patients who receive D-penicillamine and patients who receive the placebo. 
+
+$H_a:$ There is a significant difference in survival between patients who receive D-penicillamine and patients who receive the placebo.
+
+We will consider `p < 0.05` to indicate statistical significance. We will perform a <a href="https://en.wikipedia.org/wiki/Logrank_test" target="_blank">Log-Rank test</a> to compare the survival distributions of the two treatment groups in the clincal trial.
+
+Click on the next tab for the Survival Analysis. 
+
+## Estimating Survival: Life Table
+
+<h3> Creating the Survival Object </h3>
+
+First we create a survival object. After which we can view the survival times of the events. The event is interest is death. A plus indicates censored data. The duration of the survival times below are **number of days**.
+
+<div class="dark">
+```{r, echo=TRUE}
+# create the survival object. the event is denoted by 1
+fusurv <- Surv(d$futime, d$status)
+
+fusurv
+```
+</div>
+
+<h3> Fitting the Kaplan-Meier Estimate </h3>
+
+Here we stratify the curve depending on what <b>drug treatment</b> the patient received.
+
+<div class="dark">
+```{r, TRUE}
+# fit the Kaplan-Meier estimator for drug
+fit_KM = survfit(fusurv ~ drug, type="kaplan-meier", data = d)
+```
+
+<h3> Life Table </h3>
+
+A `summary()` of the resulting `fit_KM` object shows, among others things, the survival times, the proportion of surviving patients at every time point, the treatment groups, and the confidence intervals.
+
+The `summary()` of the `fit_KM` objects produced something called a Life Table. It shows, for certain durations, what the probability is that a person at that time point will die. In other words, it represents the survivorship of the PBC patients.
+
+```{r, echo=TRUE}
+summary(fit_KM)
+```
+</div>
+
+<h4> How to Interpret the Life Table </h4>
+
+- The `time` column tells us when the event of interest occurred. In this case, it shows the time point (in days) one or more patients died.
+
+- The `n.risk` column contains the number of PBC patients that are still alive at a given time.
+
+- The `n.event` column contains the number of PBC patients that died at a given time.
+
+- `Survival` is the probability of survival for PBC patients left in the study.
+
+## Kaplan-Meier Survival Curve and Log-Rank Hypothesis Test
+
+We can examine the corresponding survival curve. The plot below shows the probability that a patient is alive at time `t` given they took the experimental drug or the placebo.
+
+<div class="dark">
+```{r, echo=TRUE, out.width="100%"}
+ggsurv<-ggsurvplot(fit_KM, data=d, 
+                   pval = TRUE, 
+                   conf.int = TRUE,
+                   ggtheme = theme_bw(),
+                   surv.median.line = "v",
+                   legend.labs = c("D-penicillamine", "Placebo"),  
+                   title = "Survival curves",
+                   subtitle = "Based on Kaplan-Meier estimates",
+                   xlab = "Time in days")
+                   #palette = c("#E7B800", "#2E9FDF")) # custom color palettes.)
+
+# Labels for Survival Curves (plot)
+ggsurv$plot <- ggsurv$plot + labs(
+  title    = "\tSurvival curves",                     
+  subtitle = "\tBased on Kaplan-Meier estimates",
+  caption = NULL
+  ) + theme(plot.title = element_text(hjust = 0.5)) + theme(plot.subtitle = element_text(hjust = 0.5))
+
+ggsurv <- ggpar(
+  ggsurv,
+  font.title    = c(16,"darkblue"),         
+  font.subtitle = c(15, "purple")
+)
+
+ggsurv
+```
+</div>
+
+<h3> Interpreting the Kaplan-Meier Survival Curve </h3>
+
+The Kaplan-Meier estimate is a step function, where there is a step down each time an event occurs. Each horizontal line represents the probability that a patient is still alive after a given time `t`. The vertical lines indicate a censored event that occurred at time `t`.
+
+The Kaplan-Meier plots stratified by treatment group shows that the survival times are quite similar for some time into the study. The curves begin to slightly diverge around the $2000$ day mark but converge again around the $3400$ day mark. Furthermore, the 95% confidence intervals of the curve overlap for a significant duration of the observation time.
+
+The median survival time is the time at which 50% of the patient population have died and 50% have survived. This statistic is indicated by the veritical tick marks to the x-axis. 
+
+Patient treated with the D-penicillamine drug had a median survival time of `3086` days. Patients treated with the placebo have a greater probability of survival than those treated with the experimental drug -- the median survival time for the placebo was `3428` days.
+
+<div class="dark">
+```{r, echo=TRUE}
+summary(fit_KM)$table
+```
+</div>
+
+<div>
+<p><span class="success">These results suggest that <b>D-pencillamine</b> is an <b>ineffective</b> drug for treating PBC.</span></p>
+</div>
+
+We can quantify this with a statistical hypothesis test. 
+
+<h3> Log-Rank Hypothesis Test </h3>
+
+<div>
+<p><span class="success">The <b>log-rank p-value of 0.52</b> indicates a <b>non-significant</b> result $(\alpha = 0.05)$. Neither of the treatments are significantly superior.</span></p>
+</div>
+
+In other words:
+
+<div>
+<p><span class="success">We fail to reject the null hypothesis. There is <b>no significant difference</b> in survival between the patients who receive D-penicillamine and patient who receive the placebo.</span></p>
+</div>
+
+## Estimating $x$-year survival
+
+A quantity often of interest in survival analysis is the probability of surviving a certain number $x$ of years.
+
+<h3> Calculating Survival Time using the `survival` package </h3>
+
+As an example, we can estimate the probability of PBC patients surviving to 8 years by using `summary()` with the `times` argument:
+
+<div class="dark">
+```{r, echo=TRUE}
+# 2256 days is about 6 years and four months
+summary(fit_KM, times = 2256)
+```
+
+- PBC patients treated with D-pencicillamine have a $63.5\%$ probability of surviving to $2256$ days. 
+- PBC patients treated with the placebo have a $69.9\%$ probability of surviving to $2256$ years. 
+
+<h3> Calculating Survival Time by Hand </h3>
+
+Since we have access to the survival table, we can calculate this survival probability by "by hand."
+
+<div class="dark">
+```{r, echo=TRUE}
+summary(fit_KM, censored = TRUE)
+```
+</div>
+
+The definition of the Kaplan-Meier Estimate is:
+
+$\hat S(t) = \underset{t_i < t} \Pi\frac{n_i-d_i}{n_i}$
+
+where $d_i$ are the number of death events at time $t$ and $n_i$ is the number of patients at risk of death just prior to time $t$.
+
+What the above essentially tells us is that the value of the survival function for time $t$, is the product of the survival probabilities for all individual time periods leading up to time $t$.
+
+We can define the survival probability for an individual time period as follows:
+
+$S_0 = \frac{\text{No. of Patients at Risk at $t_i$} -\text{No. of Patients who Died at $t_i$}}{\text{No. of Patients at Risk at $t_i$}}$
+
+<!-- <div> -->
+<!-- <p><span class="warning">The number of deaths in the above formula does not include the number of censored observations.</span></p> -->
+<!-- </div> -->
+
+Let's walk through a simple example and calculate the probability that a PBC patient treated with D-pencicillamine survives longer than 2256 days. First we calculate the individual survival probabilities for $t = 2254$, $t = 2255$, and $t = 2256$.
+
+---
+
+First we calculate the individual survival probability for time $t = 2254$:
+
+```{r}
+summary(fit_KM, times = 2254)
+```
+
+The individual suvival probability for time $t = 2254$ is $64.7\%$.
+
+---
+
+Next we calculate the individual survival probability for time $t = 2255$:
+
+$S_{2255} = \frac{\text{No. of Patients at Risk at $t_{2255}$} -\text{No. of Patients who Died at $t_{2255}$}}{\text{No. of Patients at Risk at $t_{2255}$}} = \frac{53 - 0}{53} = \frac{53}{53} = 1.0000000$
+
+A censored event occurred at time $t=2254$ and nobody died so the individual survival probability is $1$.
+
+---
+
+Lastly, we calculate the individual survival probability for time $t=2256$:
+
+$S_{2256} = \frac{\text{No. of Patients at Risk at $t_{2256}$} -\text{No. of Patients who Died at $t_{2256}$}}{\text{No. of Patients at Risk at $t_{2256}$}} = \frac{52 - 1}{52} = \frac{51}{52} = 0.9807692$
+
+The calculate the final probability of survival at time $t_{2256}$:
+
+$S(2256) = S_{2254} \times S_{2255} \times S_{2256} = 0.647 \times \frac{53}{53} \times \frac{51}{52} = 0.6345577$
+
+<div>
+<p><span class="success">This probability is approximately equal to the probability we calculated above (0.635). </span></p>
+</div>
+
+</div>
+
+******
+# Cox Proportional-Hazards Model {.tabset .tabset-fade}
+******
+
+<div>
+<p><span class="warning">Click on the tabs for different aspects of the Cox Regression Analysis.</span></p>
+</div>
+
+## The Basics
+
+The <b>Cox Proportional-Hazards Model</b> is a multivariate regression model used to investigate the association between the survival time of patients and the simultaneous effect of one or more predictor variables. 
+
+The Cox model is expressed by the hazard function denoted by $h(t)$. The hazard function can be interpreted as the risk of dying at time t. It can be estimated as follow:
+
+$h(t) = h_0(t) \times exp(\beta_1x_1 + \beta_2x_2 + \ldots + \beta_px_p)$
+
+where, 
+
+- $t$ represents the survival time
+- $h(t)$ is the hazard function determined by a set of p covariates $(x_1,x_2,\ldots,x_p)$
+- the coefficients $(\beta_1, \beta_2,\ldots, \beta_p)$ measure the impact (i.e., the effect size) of the covariates
+- the term $h_0$ is called the baseline hazard. 
+    + It corresponds to the value of the hazard if all the $x_i$ are equal to zero (the quantity $exp(0)$ equals 1). 
+    + The ‘t’ in h(t) reminds us that the hazard may vary over time.
+
+In the final part of the analysis, we will use the Cox Regression Model to quantify the effect size that each clinical characteristic has on a patient's survival. 
+
+Before doing so, we have to check the following key assumptions of the Cox model:
+
+- Proportional-Hazards model assumption: the hazard curves for the groups of observations (or patients) should be proportional and cannot cross.
+    
+- Non-linearity in the relationship between the log hazard and the covariates 
+
+- Non-informative censoring: The distribution of survival times (T) provides no information about the distribution of censorship times (C), and vice versa.
+
+We test these assumptions in the next section.
+
+## Cox Model Assumptions
+
+In this section we evaluate the Cox model assumptions:
+
+- Proportional-Hazards Model assumption
+
+- Non-linearity
+
+- Non-informative censoring
+
+<div>
+<p><span class="warning">Note that, when used inappropriately, statistical models may give rise to misleading conclusions.
+<br>
+Therefore, it’s important to check that a given model is an appropriate representation of the data.</span></p>
+</div>
+---
+
+<h3> Testing the Proportional-Hazards Assumption </h3>
+
+The proportional hazards assumption can be checked based on the scaled _Schoenfeld residuals_. 
+
+The proportional hazards assumption is supported by a non-significant relationship between the _Schoenfeld residuals_ and time. The two must be independent.
+
+To test this assumption, we run `cox.zph()`:
+
+<div style="max-height:700px"; class="dark">
+```{r}
+res.cox <- coxph(fusurv ~ drug + age + sex + ascites + hepato + 
+                   spiders + edema + bili + chol + albumin + copper + alk_phos + 
+                   sgot + trig + protime + stage , data = d)
+
+test.ph <- cox.zph(res.cox)
+test.ph
+```
+</div>
+
+
+<p><span class="success">The output above shows that the test is not statistically significant for each of the covariates, and the global test is also not statistically significant.
+</span></p>
+
+The assumption of proportional hazards is supported for the each of the covariates.
+
+<h3> Testing the Non Linearity Assumption </h3>
+
+The Cox Model assumes that continuous covariates have a nonlinear form. We can test the nonlinearity assumption by plotting the _Martingale residuals_ against the continuous covariates. 
+
+<div style="max-height:700px"; class="dark">
+```{r, warning=FALSE}
+ggcoxfunctional(fusurv ~ age + bili + chol + albumin + copper + 
+                  alk_phos + sgot + trig + protime, data = d)
+```
+</div>
+
+<p><span class="success">The assumption of non linearity is supported
+</span></p>
+
+<h3>Testing the Non-informative censoring Assumption</h3>
+
+.
+
+##  Cox Proportional-Hazards Model
+
+We can build a Cox-Proportional Hazard Model using the `coxph` function.
+
+<div style="max-height:700px"; class="dark">
+```{r}
+# Fit a Cox proportional-hazards model
+res.cox <- coxph(fusurv ~ drug + age + sex + ascites + hepato + 
+                   spiders + edema + bili + chol + albumin + copper + alk_phos + 
+                   sgot + trig + protime + stage , data = d)
+```
+</div>
+
+Typing `res.cox` returns the full results of the regression analysis. 
+
+We can see a tidy version of the results using the `tidy` function:
+
+<div class="dark">
+```{r}
+broom::tidy(res.cox)
+```
+</div>
+
+<h3>Hazard Ratios</h3>
+
+Recall that the Cox model is expressed by the hazard function $h(t)$:
+
+$h(t) = h_0(t) \times exp(\beta_1x_1 + \beta_2x_2 + \ldots + \beta_px_p)$
+
+The quantity of interest from a Cox regression model is the hazard ratio. The quantities $exp(\beta_i)$ are the hazard ratios. 
+
+The Hazard Ratio (HR) can be interpreted as follows:
+
+- HR = 1: No effect
+- HR < 1: indicates a decreased risk of death
+- HR > 1: indicates an increased risk of death
+
+<h3> How to Interpret Results </h3>
+
+The `estimate` column in the summary above is the regression parameter $\beta_i$ of the Cox model. 
+
+<div>
+<p><span class="success">The `estimate` column quantifies the effect size (the impact) that the covariate has on the patient's survival time.</span></p>
+</div>
+
+The expression is $exp(\beta_i)$ is the hazard ratio -- this is the `blah` column of the summary above. 
+
+So for example, we obtained a regression parameter $\beta_1 = -0.0476$ for the placebo vs D-penicillamine (the experiemental drug). The hazard ratio for this covariate is $HR = exp(\beta_1) = 0.95348$.
+
+A HR < 1 indicates reduced hazard of death.
+
+Therefore, we would say that PBC patients treated with the placebo have a 0.95348 times <b>reduced</b> hazard of death compared to PBC patients treated with D-penicillamine. The p-value associated with this regression parameter is $p=0.826919$, which indicates that the difference is not significant.
+
+<div>
+<p><span class="success">This supports the result we obtained from the Kaplan-Meier Survival Analysis. Patients treated with the placebo have a slightly higher survival time but the difference is not significantly greater than patients treated with D-penicillamine.</span></p>
+</div>
+
+As a final point, the `statistic` column of the result above is the z-score. `conf.low` and `conf.high` are the low and high 95% confidence intervals, respectively. 
+
+The rest of the covariates can be analyzed in a similar fashion.
+
+## Visualizing the Hazard Ratios via Forest Plot
+
+<div>
+<p><span class="success">We can visualize the hazard ratios for all of the covariates using the `ggforest` function. The following visual is called a <a href="https://en.wikipedia.org/wiki/Forest_plot" target="_blank">Forest Plot</a>.
+
+Zoom In to see the text more clearly.</p></span>
+</div>
+
+<div class="dark">
+```{r, warning=FALSE, fig.width=12, fig.height=14, out.width="100%"}
+ggforest(res.cox, data = d)
+```
+</div>
+
+<h3>How to Interpret</h3>
+
+- The numbers of the far right of the plot are the p-values associated with the regression analysis. The p-values indicate whether or not the covariate's impact on the patient's survival time is statistically significant. 
+    + Statistically significant covariates are indicated by a "*" next to the p-value.
+
+- The numbers in the third column are the Hazard Ratios (HR). 
+  + The numbers below in the parenthesis are the 95% confidence interval.
+
+- The numbers along the x-axis are the effect size.
+
+- The AIC (Akaike information criterion) of the model is 957.64.
+
+<h3> Sample Analysis</h3>
+
+The covariate `protime` has the largest impact (effect size) on a patient's survival. A hazard ratio of 16.17 indicates that in patients with who have a prothrombin time that deviates from the average of 10 to 14 seconds have an increased risk of death than patients who have a normal prothrombin time.
+
+As shown by the forest plot, the respective 95% confidence interval is 1.01 - 257.84 and this result is significant (p-val = 0.049).
+
+<h4>Medical Interpretation</h4>
+
+- Prothrombin time is the time it takes for blood to clot.
+- Bleeding within the body activates a complex system of plasma proteins, called **coagulation** factors, which promote blood clot formation.
+- The liver is responsible for producing most of these **coagulation** factors.
+- If the blood clots too quickly or too slowly during bleeding (uncontrolled bleeding), this is a sign that the liver is not functioning properly. 
+    + Either the clotting factors are not being produced or vitamin K is not being absorbed.
+  
+<h3>Summary of Results</h3>
+
+
+<div>
+<p><span class="success">Using this model, we see that the covariates `age`, `edema`, `bili`, `albumin`, and `protime` significantly influence the patient's risk of death in this study. The effect sizes are shown in the Forest Plot above.</span></p>
+</div>
+
+******
+# Conclusion
+******
+
+In this notebook, we performed a <b>Survival Analysis</b> and built a multivariate <b>Cox Proportional-Hazards Model</b> to evaluate the results of the clinical study. 
+
+We found that:
+
+1. There is no statistically significant difference in survival between PBC patients treated with D-penicillamine (the experimental drug) and PBC patients treated with the placebo.
+
+2. The covariates `age`, `edema`, `bili`, `albumin`, and `protime` significantly influence the patient's risk of death in this study. The effect sizes of these clinical characteristics are shown in the Forest Plot of the previous section above.
+
+3. D-penicillamine was ineffective for treating the PBC patients in this study. 
+
+
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+$\blacksquare$
